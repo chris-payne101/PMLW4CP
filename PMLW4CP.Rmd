@@ -1,0 +1,48 @@
+---
+title: "Practical Machine Learning - Week 4 - Course Project"
+author: "Chris Payne"
+date: "10/02/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+
+## Data
+
+```{r, echo=FALSE}
+
+library(randomForest)
+library(caret)
+trainfile <- "pml-training.csv" 
+testfile <- "pml-testing.csv"
+trainfileURL <-
+ "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testfileURL <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+if (!file.exists(trainfile)) {
+    download.file(trainfileURL ,trainfile,method="auto") 
+ }
+
+if (!file.exists(testfile)) {
+    download.file(testfileURL ,testfile,method="auto") 
+ }
+
+train = read.csv("pml-training.csv")
+test = read.csv("pml-testing.csv")
+
+train$classe <- as.factor(train$classe)
+test$classe <- as.factor(test$classe)
+
+trainNA <- train[ , colSums(is.na(train)) == 0]
+nums <- unlist(lapply(trainNA, is.numeric))
+nums[93] <- TRUE
+
+#rf_classifier = randomForest(classe ~ ., data=train, importance=TRUE)
+#rf_classifier <-train(classe~.,data=na.exclude(train),method="rf")
+```
+
