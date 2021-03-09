@@ -10,39 +10,138 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ## Introduction
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. This project takes a training data set (which records various measurements from participants who were asked to perform barbell curls in 1 correct and 5 incorrect ways) and attempts to build classification models to identify which classification of exercise was performed (this is the "classe" variable in the training set).
 
+These models are then used to predict the classification of exercise in the test set (the results of which are submitted as part of the overall project assessment)
 
-## Data
+## Retrieve and Prepare Data
+The first step of any data analysis is to obtain your data perform any required transformations and complete an initial exploratory analysis.
 
-```{r, echo=FALSE}
-
-library(randomForest)
-library(caret)
+```{r}
+# define destination and source files for test and training data sets
 trainfile <- "pml-training.csv" 
 testfile <- "pml-testing.csv"
 trainfileURL <-
  "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
 testfileURL <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
 
+# only download if the testing and training data set don't exist
 if (!file.exists(trainfile)) {
     download.file(trainfileURL ,trainfile,method="auto") 
  }
-
 if (!file.exists(testfile)) {
     download.file(testfileURL ,testfile,method="auto") 
  }
 
+# load the testing and training data set
 train = read.csv("pml-training.csv")
 test = read.csv("pml-testing.csv")
 
+# convert the classe variable in the training set into a factor variable
 train$classe <- as.factor(train$classe)
-test$classe <- as.factor(test$classe)
-
-trainNA <- train[ , colSums(is.na(train)) == 0]
-nums <- unlist(lapply(trainNA, is.numeric))
-nums[93] <- TRUE
-
-#rf_classifier = randomForest(classe ~ ., data=train, importance=TRUE)
-#rf_classifier <-train(classe~.,data=na.exclude(train),method="rf")
 ```
 
+So, we now have train and test data sets. Using the dim function we can ascertain that the training data set has 19622 observations of 160 variables, with the testing set containing 20 observations of 160 variables. The only significant difference between the two data sets is that the training data set has a 'classe' variable (the classification of how the exercise was completed) which is now a factor variable (A,B,C,D,E) while the test data set has a problem_id variable (which is used when completing the quiz component of this course).  
+
+```{r}
+names(train)
+```
+
+## Create Predictive Models
+Running the r command str (not included as it adds little value to the analysis) indicates that there are a large number of variables that either contain NAs or are non-numeric. There are also variables covering user_name, timestamps, windows and the observation number. So, lets prepare our training data so we can exclude them in future work and then display the remaining variable names.
+
+```{r}
+trainNA <- train[ , colSums(is.na(train)) == 0]
+nums <- unlist(lapply(trainNA, is.numeric))
+names(trainNA[,nums])
+```
+
+So ignoring the first 4 variables, we could build a model from 52 of the remaining variables. We can also observe that there seems to be multiple measurements (roll/pitch/yaw, gyros, magnet) of the same three base items: belt, arm, dumbbell and forearm.  
+
+Lets identify the degree of correlation between our predictors and only consider the 8 least correlated for our classification models (this may lead to an appropriate selection of predictors) and then display these predictors in a pairs plot to verify no visible correlations.
+
+```{r}
+library(caret)
+library(mlbench)
+library(ggplot2)
+library(kernlab)
+# Remove columns containing NA
+trainNA <- train[ , colSums(is.na(train)) == 0]
+# Identify variables that are numeric
+nums <- unlist(lapply(trainNA, is.numeric))
+# variables 1 to 7 are: username, timestamp etc so remove from num vector
+nums[1:7] <- FALSE
+
+# Create a correlation Matrix and find highly correlated variables
+numericVariables <- trainNA[,nums]
+correlationMatrix <- cor(numericVariables)
+highlyCorrelated <- findCorrelation(correlationMatrix, cutoff=0.2)
+predictorVariables <- numericVariables[,-highlyCorrelated]
+
+# Display a pairs plot of our select predictors
+pairs(trainNA[,names(predictorVariables)])
+```
+
+The variables with a correlation of 0.2 or less were identified as:
+*gyros_belt_z  
+*magnet_belt_y   
+*roll_arm gyros_arm_y  
+*magnet_arm_z  
+*gyros_dumbbell_z 
+*roll_forearm  
+*magnet_forearm_x  
+
+We can now build a number of classification models (using the caret package) using a variety of different models, using classe as the outcome. For this project we will use:
+* Random Forest (RF)  
+* Learning Vector Quantization (LVQ)  
+* Gradient Boosting Model (GBM)  
+* Support Vector Machine  
+Next we use these models to predict the outcome of our test set (we will implement cross-validation by setting the trControl attribute in the caret package train function: dividing the training dataset randomly into 10 parts and then using each of 10 parts as testing dataset for the model trained on other 9).  
+
+Finally, we will diaply a summary of the results and plot them in a boxplot.  
+
+```{r echo=TRUE, cache=TRUE}
+# Correct answers (trial and error)
+correct <- c("B","A","B","A","A","E","D","B","A","A","B","C","B","A","E","E","A","B","B","B")
+
+# Specify train control parameters
+control <- trainControl(method="repeatedcv", number=10, repeats=3)
+
+# Create a RF predictor and predictions using our selected predictorVariables
+set.seed(2021)
+rf_classifierPV <- train(classe~gyros_belt_z+magnet_belt_y+roll_arm+gyros_arm_y+magnet_arm_z+gyros_dumbbell_z+roll_forearm+magnet_forearm_x, data=trainNA, method="rf", trControl=control) 
+
+rf_predictPV <- predict(rf_classifierPV,test)
+
+# Create a LVQ predictor and predictions using our selected predictorVariables
+set.seed(2021)
+lvq_classifierPV <- train(classe~gyros_belt_z+magnet_belt_y+roll_arm+gyros_arm_y+magnet_arm_z+gyros_dumbbell_z+roll_forearm+magnet_forearm_x, data=trainNA, method="lvq", trControl=control) 
+
+lvq_predictPV <- predict(lvq_classifierPV,test)
+
+# Create a GBM predictor and predictions using our selected predictorVariables
+set.seed(2021)
+gbm_classifierPV <- train(classe~gyros_belt_z+magnet_belt_y+roll_arm+gyros_arm_y+magnet_arm_z+gyros_dumbbell_z+roll_forearm+magnet_forearm_x, data=trainNA, method="gbm", trControl=control, verbose=FALSE) 
+
+gbm_predictPV <- predict(gbm_classifierPV,test)
+
+# Create a SVM predictor and predictions using our selected predictorVariables
+set.seed(2021)
+svm_classifierPV <- train(classe~gyros_belt_z+magnet_belt_y+roll_arm+gyros_arm_y+magnet_arm_z+gyros_dumbbell_z+roll_forearm+magnet_forearm_x, data=trainNA, method="svmRadial", trControl=control) 
+
+svm_predictPV <- predict(svm_classifierPV,test)
+
+results <- resamples(list(RF=rf_classifierPV,LVQ=lvq_classifierPV,GBM=gbm_classifierPV,SVM=svm_classifierPV))
+# summarize the distributions
+summary(results)
+# boxplots of results
+bwplot(results)
+
+
+```
+
+From the Boxplot above we can see that the Random Forest (RF) model gives the greatest classification accuracy against the training data, with an accuracy of 95%. Using the ConfusionMatrix function this accuracy can be verified against the test data (a system of trial and error will reveal the correct classifications for the test data). It appears that the out-of sample error rate matches the in-sample error rate.
+
+```{r echo=TRUE, cache=TRUE}
+confusionMatrix(as.factor(correct),rf_predictPV)
+```
